@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trình Duyệt Ảnh Konachan Nâng Cao</title>
+    <title>Trình Duyệt Ảnh Konachan Nâng Cao - Tối Ưu</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -46,7 +46,7 @@
             left: -50%;
             width: 200%;
             height: 200%;
-            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
             transform: rotate(30deg);
         }
 
@@ -91,6 +91,7 @@
 
         label {
             margin-bottom: 10px;
+            padding: 0;
             font-weight: 600;
             color: #93c5fd;
             display: flex;
@@ -198,6 +199,7 @@
         .select-search input {
             width: 100%;
             padding: 10px;
+            margin: 0;
             border-radius: 5px;
             background: rgba(30, 41, 59, 0.8);
             color: #e2e8f0;
@@ -223,13 +225,15 @@
         }
 
         .select-option input {
-            margin-right: 10px;
+            margin: 0 10px 0 0;
+            padding: 0;
             width: 16px;
             height: 16px;
         }
 
         .select-option label {
-            margin-bottom: 0;
+            margin: 0;
+            padding: 0;
             cursor: pointer;
             font-weight: normal;
             flex-grow: 1;
@@ -279,10 +283,9 @@
             font-size: 1.2rem;
             font-weight: 600;
             color: #93c5fd;
-            padding: 0 20px;
+            padding: 10px 20px;
             background: rgba(15, 23, 42, 0.7);
             border-radius: 8px;
-            padding: 10px 20px;
         }
 
         .view-controls {
@@ -335,6 +338,7 @@
             height: 100%;
             display: flex;
             flex-direction: column;
+            will-change: transform;
         }
 
         .post:hover {
@@ -420,13 +424,27 @@
             animation: spin 1s linear infinite;
         }
 
+        .skeleton {
+            background: linear-gradient(90deg, rgba(30, 41, 59, 0.8) 25%, rgba(56, 66, 87, 0.8) 50%, rgba(30, 41, 59, 0.8) 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+
         @keyframes spin {
             0% {
                 transform: rotate(0deg);
             }
-
             100% {
                 transform: rotate(360deg);
+            }
+        }
+
+        @keyframes loading {
+            0% {
+                background-position: 200% 0;
+            }
+            100% {
+                background-position: -200% 0;
             }
         }
 
@@ -604,7 +622,6 @@
     <div class="container">
         <header>
             <h1><i class="fas fa-images"></i> Trình Duyệt Ảnh Konachan Nâng Cao</h1>
-            <class class="description">Active trang này trước https://cors-anywhere.herokuapp.com</class>
         </header>
 
         <div class="controls">
@@ -741,51 +758,92 @@
             let currentLimit = 100;
             let currentBlacklist = '';
             let maxPageReached = false;
-            let favorites = JSON.parse(localStorage.getItem('konachanFavorites')) || [];
-            let viewMode = 'grid';
+            
+            // Sử dụng Map thay vì array cho favorites để tối ưu performance
+            const favoritesData = JSON.parse(localStorage.getItem('konachanFavorites') || '[]');
+            const favoritesMap = new Map(favoritesData.map(id => [id, true]));
+            
+            // Cache posts data để tránh fetch lại
+            const postsCache = new Map();
+            
+            let viewMode = localStorage.getItem('konachanViewMode') || 'grid';
             let allTags = [];
             let selectedTags = [];
+            let searchTimeout;
 
-            // Elements
-            const galleryEl = document.getElementById('gallery');
-            const ratingEl = document.getElementById('rating');
-            const sortEl = document.getElementById('sort');
-            const limitEl = document.getElementById('limit');
-            const blacklistEl = document.getElementById('blacklist');
-            const searchBtn = document.getElementById('search');
-            const randomBtn = document.getElementById('random');
-            const clearFiltersBtn = document.getElementById('clear-filters');
-            const showFavoritesBtn = document.getElementById('show-favorites');
-            const prevPageBtn = document.getElementById('prev-page');
-            const nextPageBtn = document.getElementById('next-page');
-            const prevPageBottomBtn = document.getElementById('prev-page-bottom');
-            const nextPageBottomBtn = document.getElementById('next-page-bottom');
-            const currentPageEl = document.getElementById('current-page');
-            const currentPageBottomEl = document.getElementById('current-page-bottom');
-            const pageInputEl = document.getElementById('page-input');
-            const jumpToPageBtn = document.getElementById('jump-to-page');
-            const gridViewBtn = document.getElementById('grid-view');
-            const listViewBtn = document.getElementById('list-view');
-            const imageModal = document.getElementById('image-modal');
-            const modalImage = document.getElementById('modal-image');
-            const modalTags = document.getElementById('modal-tags');
-            const closeModalBtn = document.querySelector('.close-modal');
-            const downloadBtn = document.getElementById('download-btn');
-            const favoriteModalBtn = document.getElementById('favorite-modal-btn');
-            const openOriginalBtn = document.getElementById('open-original');
+            // Cache DOM elements
+            const elements = {
+                gallery: document.getElementById('gallery'),
+                rating: document.getElementById('rating'),
+                sort: document.getElementById('sort'),
+                limit: document.getElementById('limit'),
+                blacklist: document.getElementById('blacklist'),
+                searchBtn: document.getElementById('search'),
+                randomBtn: document.getElementById('random'),
+                clearFiltersBtn: document.getElementById('clear-filters'),
+                showFavoritesBtn: document.getElementById('show-favorites'),
+                prevPageBtn: document.getElementById('prev-page'),
+                nextPageBtn: document.getElementById('next-page'),
+                prevPageBottomBtn: document.getElementById('prev-page-bottom'),
+                nextPageBottomBtn: document.getElementById('next-page-bottom'),
+                currentPageEl: document.getElementById('current-page'),
+                currentPageBottomEl: document.getElementById('current-page-bottom'),
+                pageInputEl: document.getElementById('page-input'),
+                jumpToPageBtn: document.getElementById('jump-to-page'),
+                gridViewBtn: document.getElementById('grid-view'),
+                listViewBtn: document.getElementById('list-view'),
+                imageModal: document.getElementById('image-modal'),
+                modalImage: document.getElementById('modal-image'),
+                modalTags: document.getElementById('modal-tags'),
+                closeModalBtn: document.querySelector('.close-modal'),
+                downloadBtn: document.getElementById('download-btn'),
+                favoriteModalBtn: document.getElementById('favorite-modal-btn'),
+                openOriginalBtn: document.getElementById('open-original'),
+                tagsSelectBtn: document.getElementById('tags-select'),
+                tagsDropdown: document.getElementById('tags-dropdown'),
+                tagsSearch: document.getElementById('tags-search'),
+                tagsOptions: document.getElementById('tags-options'),
+                selectedTagsContainer: document.getElementById('selected-tags')
+            };
 
-            // Elements cho tags dropdown
-            const tagsSelectBtn = document.getElementById('tags-select');
-            const tagsDropdown = document.getElementById('tags-dropdown');
-            const tagsSearch = document.getElementById('tags-search');
-            const tagsOptions = document.getElementById('tags-options');
-            const selectedTagsContainer = document.getElementById('selected-tags');
+            // Debounce function cho search
+            function debounce(func, wait) {
+                let timeout;
+                return function executedFunction(...args) {
+                    const later = () => {
+                        clearTimeout(timeout);
+                        func(...args);
+                    };
+                    clearTimeout(timeout);
+                    timeout = setTimeout(later, wait);
+                };
+            }
 
-            // Hàm load tags từ API
+            // Skeleton loader
+            function createSkeletonLoader() {
+                const fragment = document.createDocumentFragment();
+                for (let i = 0; i < 12; i++) {
+                    const skeleton = document.createElement('div');
+                    skeleton.className = 'post skeleton';
+                    skeleton.style.height = '300px';
+                    fragment.appendChild(skeleton);
+                }
+                return fragment;
+            }
+
+            // Hàm load tags từ API với caching
             async function loadTags() {
                 try {
+                    // Check cache first
+                    const cachedTags = sessionStorage.getItem('konachanTags');
+                    if (cachedTags) {
+                        allTags = JSON.parse(cachedTags);
+                        displayTags(allTags);
+                        return;
+                    }
+
                     const apiUrl = 'https://konachan.com/tag.json?limit=2000&order=count';
-                    const proxyUrl = `https://cors-anywhere.herokuapp.com/${apiUrl}`;
+                    const proxyUrl = `https://cors-anywhere.herokuapp.com/${encodeURIComponent(apiUrl)}`;
 
                     const response = await fetch(proxyUrl, {
                         headers: {
@@ -799,26 +857,31 @@
 
                     const tagsData = await response.json();
                     allTags = tagsData;
+                    
+                    // Cache tags for session
+                    sessionStorage.setItem('konachanTags', JSON.stringify(tagsData));
 
-                    // Hiển thị tags
                     displayTags(tagsData);
 
                 } catch (error) {
                     console.error('Lỗi khi tải tags:', error);
-                    tagsOptions.innerHTML = '<div class="error">Không thể tải tags từ API</div>';
+                    elements.tagsOptions.innerHTML = '<div class="error">Không thể tải tags từ API</div>';
                 }
             }
 
-            // Hàm hiển thị tags trong dropdown
+            // Hàm hiển thị tags trong dropdown với virtual scrolling cơ bản
             function displayTags(tags) {
-                tagsOptions.innerHTML = '';
+                const fragment = document.createDocumentFragment();
 
                 if (tags.length === 0) {
-                    tagsOptions.innerHTML = '<div class="select-option">Không tìm thấy tags nào</div>';
+                    elements.tagsOptions.innerHTML = '<div class="select-option">Không tìm thấy tags nào</div>';
                     return;
                 }
 
-                tags.forEach(tag => {
+                // Chỉ hiển thị tối đa 100 tags để tối ưu performance
+                const displayTags = tags.slice(0, 100);
+
+                displayTags.forEach(tag => {
                     const option = document.createElement('div');
                     option.className = 'select-option';
                     option.innerHTML = `
@@ -827,12 +890,10 @@
                         <span class="tag-count">(${tag.count})</span>
                     `;
 
-                    // Kiểm tra nếu tag đã được chọn
                     if (selectedTags.includes(tag.name)) {
                         option.querySelector('input').checked = true;
                     }
 
-                    // Sự kiện khi chọn tag
                     option.querySelector('input').addEventListener('change', function () {
                         if (this.checked) {
                             addTag(this.value);
@@ -841,11 +902,13 @@
                         }
                     });
 
-                    tagsOptions.appendChild(option);
+                    fragment.appendChild(option);
                 });
+
+                elements.tagsOptions.innerHTML = '';
+                elements.tagsOptions.appendChild(fragment);
             }
 
-            // Hàm thêm tag
             function addTag(tagName) {
                 if (!selectedTags.includes(tagName)) {
                     selectedTags.push(tagName);
@@ -853,7 +916,6 @@
                 }
             }
 
-            // Hàm xóa tag
             function removeTag(tagName) {
                 const index = selectedTags.indexOf(tagName);
                 if (index > -1) {
@@ -862,17 +924,17 @@
                 }
             }
 
-            // Hàm cập nhật hiển thị tags đã chọn
             function updateSelectedTags() {
-                selectedTagsContainer.innerHTML = '';
+                elements.selectedTagsContainer.innerHTML = '';
 
                 if (selectedTags.length === 0) {
-                    tagsSelectBtn.querySelector('span').textContent = 'Chọn tags...';
+                    elements.tagsSelectBtn.querySelector('span').textContent = 'Chọn tags...';
                     return;
                 }
 
-                tagsSelectBtn.querySelector('span').textContent = `${selectedTags.length} tags đã chọn`;
+                elements.tagsSelectBtn.querySelector('span').textContent = `${selectedTags.length} tags đã chọn`;
 
+                const fragment = document.createDocumentFragment();
                 selectedTags.forEach(tag => {
                     const tagEl = document.createElement('div');
                     tagEl.className = 'selected-tag';
@@ -885,50 +947,65 @@
                         e.stopPropagation();
                         removeTag(this.dataset.tag);
 
-                        // Bỏ chọn trong dropdown
-                        const checkbox = document.getElementById(`tag-${allTags.find(t => t.name === this.dataset.tag)?.id}`);
-                        if (checkbox) {
-                            checkbox.checked = false;
+                        const tagObj = allTags.find(t => t.name === this.dataset.tag);
+                        if (tagObj) {
+                            const checkbox = document.getElementById(`tag-${tagObj.id}`);
+                            if (checkbox) {
+                                checkbox.checked = false;
+                            }
                         }
                     });
 
-                    selectedTagsContainer.appendChild(tagEl);
+                    fragment.appendChild(tagEl);
                 });
+                elements.selectedTagsContainer.appendChild(fragment);
             }
 
-            // Hàm cập nhật trạng thái phân trang
             function updatePagination() {
-                currentPageEl.textContent = currentPage;
-                currentPageBottomEl.textContent = currentPage;
+                elements.currentPageEl.textContent = currentPage;
+                elements.currentPageBottomEl.textContent = currentPage;
 
-                prevPageBtn.disabled = currentPage === 1;
-                prevPageBottomBtn.disabled = currentPage === 1;
+                elements.prevPageBtn.disabled = currentPage === 1;
+                elements.prevPageBottomBtn.disabled = currentPage === 1;
 
-                nextPageBtn.disabled = maxPageReached;
-                nextPageBottomBtn.disabled = maxPageReached;
+                elements.nextPageBtn.disabled = maxPageReached;
+                elements.nextPageBottomBtn.disabled = maxPageReached;
             }
 
-            // Hàm fetch dữ liệu từ Konachan
+            // Optimized fetch with caching
             async function fetchPosts() {
-                const rating = ratingEl.value;
-                const sort = sortEl.value;
-                const limit = limitEl.value;
-                const blacklist = blacklistEl.value.trim();
+                const rating = elements.rating.value;
+                const sort = elements.sort.value;
+                const limit = elements.limit.value;
+                const blacklist = elements.blacklist.value.trim();
 
-                // Cập nhật state
                 currentRating = rating;
                 currentSort = sort;
                 currentLimit = limit;
                 currentBlacklist = blacklist;
                 currentTags = selectedTags.join(' ');
 
-                // Hiển thị trạng thái loading
-                galleryEl.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> Đang tải dữ liệu...</div>';
+                // Create cache key
+                const cacheKey = `${rating}-${sort}-${limit}-${currentPage}-${selectedTags.join('+')}-${blacklist}`;
+                
+                // Check cache first
+                if (postsCache.has(cacheKey)) {
+                    displayPosts(postsCache.get(cacheKey));
+                    updatePagination();
+                    return;
+                }
+
+                // Show skeleton loader instead of spinner
+                elements.gallery.innerHTML = '';
+                elements.gallery.appendChild(createSkeletonLoader());
 
                 try {
-                    // Tạo URL với proxy để tránh CORS
-                    let tagsParam = selectedTags.length > 0 ? `${selectedTags.join('+')}` : '';
-                    tagsParam += blacklist ? `+-${blacklist.split(' ').join('+-')}` : '';
+                    // Build tags parameter more efficiently
+                    let tagsParam = selectedTags.length > 0 ? selectedTags.join('+') : '';
+                    if (blacklist) {
+                        const blacklistTags = blacklist.split(' ').map(t => `-${t}`).join('+');
+                        tagsParam += tagsParam ? `+${blacklistTags}` : blacklistTags;
+                    }
 
                     const apiUrl = `https://konachan.com/post.json?limit=${limit}&page=${currentPage}&tags=rating:${rating}+order:${sort}${tagsParam ? `+${tagsParam}` : ''}`;
                     const proxyUrl = `https://cors-anywhere.herokuapp.com/${apiUrl}`;
@@ -945,49 +1022,46 @@
 
                     const posts = await response.json();
 
-                    // Kiểm tra nếu không còn trang tiếp theo
                     if (posts.length === 0) {
                         maxPageReached = true;
-                        galleryEl.innerHTML = '<div class="error">Không còn dữ liệu nào nữa.</div>';
+                        elements.gallery.innerHTML = '<div class="error">Không còn dữ liệu nào nữa.</div>';
                         updatePagination();
                         return;
                     }
 
-                    // Hiển thị bài đăng
+                    // Cache the results
+                    postsCache.set(cacheKey, posts);
+
                     displayPosts(posts);
                     maxPageReached = posts.length < limit;
 
                 } catch (error) {
                     console.error('Lỗi khi tải dữ liệu:', error);
-                    galleryEl.innerHTML = `<div class="error">Lỗi khi tải dữ liệu: ${error.message}</div>`;
+                    elements.gallery.innerHTML = `<div class="error">Lỗi khi tải dữ liệu: ${error.message}</div>`;
                 }
 
                 updatePagination();
             }
 
-            // Hàm hiển thị bài đăng
+            // Optimized displayPosts with DocumentFragment
             function displayPosts(posts) {
-                galleryEl.innerHTML = '';
+                elements.gallery.innerHTML = '';
 
                 if (posts.length === 0) {
-                    galleryEl.innerHTML = '<div class="error">Không tìm thấy bài đăng nào.</div>';
+                    elements.gallery.innerHTML = '<div class="error">Không tìm thấy bài đăng nào.</div>';
                     return;
                 }
+
+                const fragment = document.createDocumentFragment();
 
                 posts.forEach(post => {
                     const postEl = document.createElement('div');
                     postEl.className = `post rating-${post.rating}`;
 
-                    // Xác định URL ảnh để hiển thị (ưu tiên preview)
-                    const imageUrl = post.preview_url || post.sample_url;
-
-                    // Rút gọn tags để hiển thị
+                    const imageUrl = post.preview_url || post.jpeg_url;
                     const displayTags = post.tags.length > 100
                         ? post.tags.substring(0, 100) + '...'
                         : post.tags;
-
-                    // Kiểm tra xem post có trong favorites không
-                    const isFavorite = favorites.includes(post.id);
 
                     postEl.innerHTML = `
                         <img src="${imageUrl}" alt="Konachan post ${post.id}" loading="lazy" data-id="${post.id}" data-url="${post.file_url}">
@@ -1000,48 +1074,69 @@
                         </div>
                     `;
 
-                    galleryEl.appendChild(postEl);
+                    // Store post data in cache
+                    postsCache.set(`post-${post.id}`, post);
+
+                    fragment.appendChild(postEl);
                 });
 
-                // Thêm sự kiện click để mở modal
-                document.querySelectorAll('.post img').forEach(img => {
-                    img.addEventListener('click', function () {
-                        openModal(this.dataset.id, this.dataset.url, this.src);
-                    });
-                });
+                elements.gallery.appendChild(fragment);
+                elements.gallery.className = `gallery ${viewMode}-view`;
 
-                // Cập nhật class view mode
-                galleryEl.className = `gallery ${viewMode}-view`;
+                // Use event delegation instead of adding listeners to each image
+                setupImageClickHandlers();
             }
 
-            // Hàm mở modal xem ảnh
+            // Event delegation for image clicks
+            function setupImageClickHandlers() {
+                // Remove any existing listeners
+                elements.gallery.removeEventListener('click', handleImageClick);
+                elements.gallery.addEventListener('click', handleImageClick);
+            }
+
+            function handleImageClick(e) {
+                if (e.target.tagName === 'IMG') {
+                    openModal(e.target.dataset.id, e.target.dataset.url, e.target.src);
+                }
+            }
+
+            // Optimized modal with cached data
             function openModal(postId, imageUrl, previewUrl) {
-                // Tìm post dựa trên ID
-                fetch(`https://cors-anywhere.herokuapp.com/https://konachan.com/post.json?tags=id:${postId}`)
-                    .then(response => response.json())
-                    .then(posts => {
-                        if (posts.length > 0) {
-                            const post = posts[0];
-                            modalImage.src = post.file_url;
-                            modalTags.innerHTML = post.tags.split(' ').map(tag => `<span class="tag">${tag}</span>`).join('');
+                const cachedPost = postsCache.get(`post-${postId}`);
+                
+                if (cachedPost) {
+                    displayModal(cachedPost);
+                } else {
+                    // Fallback to API if not in cache
+                    fetch(`https://cors-anywhere.herokuapp.com/https://konachan.com/post.json?tags=id:${postId}`)
+                        .then(response => response.json())
+                        .then(posts => {
+                            if (posts.length > 0) {
+                                const post = posts[0];
+                                postsCache.set(`post-${postId}`, post);
+                                displayModal(post);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Lỗi khi tải chi tiết ảnh:', error);
+                        });
+                }
+            }
 
-                            // Cập nhật nút favorite
-                            const isFavorite = favorites.includes(post.id);
-                            favoriteModalBtn.innerHTML = isFavorite
-                                ? '<i class="fas fa-heart"></i> Bỏ yêu thích'
-                                : '<i class="far fa-heart"></i> Yêu thích';
-                            favoriteModalBtn.dataset.id = post.id;
+            function displayModal(post) {
+                elements.modalImage.src = post.file_url;
+                elements.modalTags.innerHTML = post.tags.split(' ').map(tag => `<span class="tag">${tag}</span>`).join('');
 
-                            // Cập nhật nút download và open original
-                            downloadBtn.onclick = () => downloadImage(post.file_url);
-                            openOriginalBtn.onclick = () => window.open(`https://konachan.com/post/show/${post.id}`, '_blank');
+                const isFavorite = favoritesMap.has(post.id);
+                elements.favoriteModalBtn.innerHTML = isFavorite
+                    ? '<i class="fas fa-heart"></i> Bỏ yêu thích'
+                    : '<i class="far fa-heart"></i> Yêu thích';
+                elements.favoriteModalBtn.dataset.id = post.id;
 
-                            imageModal.style.display = 'block';
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Lỗi khi tải chi tiết ảnh:', error);
-                    });
+                elements.downloadBtn.onclick = () => downloadImage(post.jpeg_url);
+                elements.openOriginalBtn.onclick = () => window.open(`https://konachan.com/post/show/${post.id}`, '_blank');
+
+                elements.imageModal.style.display = 'block';
             }
 
             function downloadImage(url) {
@@ -1055,6 +1150,7 @@
                         document.body.appendChild(a);
                         a.click();
                         document.body.removeChild(a);
+                        URL.revokeObjectURL(a.href);
                     })
                     .catch(error => {
                         console.error('Lỗi khi tải ảnh:', error);
@@ -1062,83 +1158,112 @@
                     });
             }
 
-
-            // Hàm hiển thị favorites
+            // Optimized show favorites with cached data
             function showFavorites() {
-                if (favorites.length === 0) {
-                    galleryEl.innerHTML = '<div class="error">Bạn chưa có ảnh yêu thích nào.</div>';
+                const favoriteIds = Array.from(favoritesMap.keys());
+                
+                if (favoriteIds.length === 0) {
+                    elements.gallery.innerHTML = '<div class="error">Bạn chưa có ảnh yêu thích nào.</div>';
                     return;
                 }
 
-                galleryEl.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> Đang tải ảnh yêu thích...</div>';
+                elements.gallery.innerHTML = '';
+                elements.gallery.appendChild(createSkeletonLoader());
 
-                // Lấy thông tin các post yêu thích
-                const promises = favorites.map(id =>
-                    fetch(`https://cors-anywhere.herokuapp.com/https://konachan.com/post.json?tags=id:${id}`)
-                        .then(response => response.json())
-                        .then(posts => posts[0])
-                );
+                // Try to get from cache first
+                const cachedFavorites = favoriteIds
+                    .map(id => postsCache.get(`post-${id}`))
+                    .filter(post => post !== undefined);
 
-                Promise.all(promises)
-                    .then(posts => {
-                        displayPosts(posts.filter(post => post !== undefined));
-                    })
-                    .catch(error => {
-                        console.error('Lỗi khi tải ảnh yêu thích:', error);
-                        galleryEl.innerHTML = '<div class="error">Có lỗi xảy ra khi tải ảnh yêu thích.</div>';
-                    });
+                if (cachedFavorites.length === favoriteIds.length) {
+                    // All favorites are cached
+                    displayPosts(cachedFavorites);
+                } else {
+                    // Fetch missing favorites
+                    const promises = favoriteIds.map(id =>
+                        postsCache.has(`post-${id}`)
+                            ? Promise.resolve(postsCache.get(`post-${id}`))
+                            : fetch(`https://cors-anywhere.herokuapp.com/https://konachan.com/post.json?tags=id:${id}`)
+                                .then(response => response.json())
+                                .then(posts => {
+                                    if (posts.length > 0) {
+                                        postsCache.set(`post-${id}`, posts[0]);
+                                        return posts[0];
+                                    }
+                                    return null;
+                                })
+                    );
+
+                    Promise.all(promises)
+                        .then(posts => {
+                            displayPosts(posts.filter(post => post !== null));
+                        })
+                        .catch(error => {
+                            console.error('Lỗi khi tải ảnh yêu thích:', error);
+                            elements.gallery.innerHTML = '<div class="error">Có lỗi xảy ra khi tải ảnh yêu thích.</div>';
+                        });
+                }
             }
 
-            // Sự kiện cho dropdown tags
-            tagsSelectBtn.addEventListener('click', function () {
-                tagsDropdown.classList.toggle('show');
-            });
-
-            // Sự kiện tìm kiếm tags
-            tagsSearch.addEventListener('input', function () {
-                const searchTerm = this.value.toLowerCase();
+            // Debounced search for tags
+            const debouncedTagSearch = debounce(function(searchTerm) {
                 if (searchTerm) {
                     const filteredTags = allTags.filter(tag =>
-                        tag.name.toLowerCase().includes(searchTerm)
+                        tag.name.toLowerCase().includes(searchTerm.toLowerCase())
                     );
                     displayTags(filteredTags);
                 } else {
-                    displayTags(allTags);
+                    displayTags(allTags.slice(0, 100)); // Show first 100 tags
                 }
+            }, 300);
+
+            // Event Listeners
+
+            // Tags dropdown
+            elements.tagsSelectBtn.addEventListener('click', function () {
+                elements.tagsDropdown.classList.toggle('show');
             });
 
-            // Đóng dropdown khi click bên ngoài
+            // Debounced tags search
+            elements.tagsSearch.addEventListener('input', function () {
+                debouncedTagSearch(this.value);
+            });
+
+            // Close dropdown when clicking outside
             document.addEventListener('click', function (e) {
-                if (!tagsSelectBtn.contains(e.target) && !tagsDropdown.contains(e.target)) {
-                    tagsDropdown.classList.remove('show');
+                if (!elements.tagsSelectBtn.contains(e.target) && !elements.tagsDropdown.contains(e.target)) {
+                    elements.tagsDropdown.classList.remove('show');
                 }
             });
 
-            // Sự kiện cho nút tìm kiếm
-            searchBtn.addEventListener('click', () => {
+            // Search and filter buttons
+            elements.searchBtn.addEventListener('click', () => {
                 currentPage = 1;
                 maxPageReached = false;
+                postsCache.clear(); // Clear cache when searching
                 fetchPosts();
             });
 
-            // Sự kiện cho nút random
-            randomBtn.addEventListener('click', () => {
-                selectedTags = ['order:random'];
+            elements.randomBtn.addEventListener('click', () => {
+                selectedTags = [];
+                elements.sort.value = 'random';
                 updateSelectedTags();
                 currentPage = 1;
                 maxPageReached = false;
+                postsCache.clear();
                 fetchPosts();
             });
 
-            // Sự kiện cho nút clear filters
-            clearFiltersBtn.addEventListener('click', () => {
+            elements.clearFiltersBtn.addEventListener('click', () => {
                 selectedTags = [];
                 updateSelectedTags();
-                blacklistEl.value = '';
+                elements.blacklist.value = '';
+                elements.rating.value = 'explicit';
+                elements.sort.value = 'score';
                 currentPage = 1;
                 maxPageReached = false;
+                postsCache.clear();
 
-                // Reset tất cả checkbox
                 document.querySelectorAll('#tags-options input[type="checkbox"]').forEach(checkbox => {
                     checkbox.checked = false;
                 });
@@ -1146,18 +1271,17 @@
                 fetchPosts();
             });
 
-            // Sự kiện cho nút show favorites
-            showFavoritesBtn.addEventListener('click', showFavorites);
+            elements.showFavoritesBtn.addEventListener('click', showFavorites);
 
-            // Sự kiện cho nút phân trang
-            prevPageBtn.addEventListener('click', () => {
+            // Pagination buttons
+            elements.prevPageBtn.addEventListener('click', () => {
                 if (currentPage > 1) {
                     currentPage--;
                     fetchPosts();
                 }
             });
 
-            nextPageBtn.addEventListener('click', () => {
+            elements.nextPageBtn.addEventListener('click', () => {
                 if (!maxPageReached) {
                     currentPage++;
                     fetchPosts();
@@ -1166,14 +1290,14 @@
                 }
             });
 
-            prevPageBottomBtn.addEventListener('click', () => {
+            elements.prevPageBottomBtn.addEventListener('click', () => {
                 if (currentPage > 1) {
                     currentPage--;
                     fetchPosts();
                 }
             });
 
-            nextPageBottomBtn.addEventListener('click', () => {
+            elements.nextPageBottomBtn.addEventListener('click', () => {
                 if (!maxPageReached) {
                     currentPage++;
                     fetchPosts();
@@ -1182,9 +1306,8 @@
                 }
             });
 
-            // Sự kiện cho nút jump to page
-            jumpToPageBtn.addEventListener('click', () => {
-                const page = parseInt(pageInputEl.value);
+            elements.jumpToPageBtn.addEventListener('click', () => {
+                const page = parseInt(elements.pageInputEl.value);
                 if (page && page > 0) {
                     currentPage = page;
                     maxPageReached = false;
@@ -1192,57 +1315,62 @@
                 }
             });
 
-            // Sự kiện cho nút view mode
-            gridViewBtn.addEventListener('click', () => {
+            // View mode buttons with localStorage
+            elements.gridViewBtn.addEventListener('click', () => {
                 viewMode = 'grid';
-                gridViewBtn.classList.add('active');
-                listViewBtn.classList.remove('active');
-                galleryEl.className = 'gallery grid-view';
+                elements.gridViewBtn.classList.add('active');
+                elements.listViewBtn.classList.remove('active');
+                elements.gallery.className = 'gallery grid-view';
+                localStorage.setItem('konachanViewMode', 'grid');
             });
 
-            listViewBtn.addEventListener('click', () => {
+            elements.listViewBtn.addEventListener('click', () => {
                 viewMode = 'list';
-                listViewBtn.classList.add('active');
-                gridViewBtn.classList.remove('active');
-                galleryEl.className = 'gallery list-view';
+                elements.listViewBtn.classList.add('active');
+                elements.gridViewBtn.classList.remove('active');
+                elements.gallery.className = 'gallery list-view';
+                localStorage.setItem('konachanViewMode', 'list');
             });
 
-            // Sự kiện cho modal
-            closeModalBtn.addEventListener('click', () => {
-                imageModal.style.display = 'none';
+            // Set initial view mode
+            if (viewMode === 'list') {
+                elements.listViewBtn.click();
+            }
+
+            // Modal events
+            elements.closeModalBtn.addEventListener('click', () => {
+                elements.imageModal.style.display = 'none';
             });
 
             window.addEventListener('click', (event) => {
-                if (event.target === imageModal) {
-                    imageModal.style.display = 'none';
+                if (event.target === elements.imageModal) {
+                    elements.imageModal.style.display = 'none';
                 }
             });
 
-            // Sự kiện cho nút favorite trong modal
-            favoriteModalBtn.addEventListener('click', function () {
+            // Optimized favorite button in modal
+            elements.favoriteModalBtn.addEventListener('click', function () {
                 const postId = parseInt(this.dataset.id);
-                const index = favorites.indexOf(postId);
 
-                if (index > -1) {
-                    favorites.splice(index, 1);
+                if (favoritesMap.has(postId)) {
+                    favoritesMap.delete(postId);
                     this.innerHTML = '<i class="far fa-heart"></i> Yêu thích';
                 } else {
-                    favorites.push(postId);
+                    favoritesMap.set(postId, true);
                     this.innerHTML = '<i class="fas fa-heart"></i> Bỏ yêu thích';
                 }
 
-                // Lưu vào localStorage
-                localStorage.setItem('konachanFavorites', JSON.stringify(favorites));
+                // Save to localStorage
+                const favoriteIds = Array.from(favoritesMap.keys());
+                localStorage.setItem('konachanFavorites', JSON.stringify(favoriteIds));
             });
 
-            // Tải dữ liệu ban đầu
+            // Initialize application
             loadTags().then(() => {
                 fetchPosts();
             });
         });
     </script>
 
-
 </body>
-
 </html>
