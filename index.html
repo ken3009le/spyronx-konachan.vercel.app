@@ -784,7 +784,7 @@
                 async function loadTags() {
                     try {
                         const apiUrl = 'https://konachan.com/tag.json?limit=2000&order=count';
-                        const proxyUrl = `https://cors-anywhere.herokuapp.com/${encodeURIComponent(apiUrl)}`;
+                        const proxyUrl = `https://cors-anywhere.herokuapp.com/${apiUrl}`;
 
                         const response = await fetch(proxyUrl, {
                             headers: {
